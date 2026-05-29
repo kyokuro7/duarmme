@@ -7,17 +7,55 @@ const bot = new Telegraf(config.BOT_TOKEN);
 // State conversation per user
 const userStates = new Map();
 
-// Middleware: hanya owner yang bisa pakai bot
+// Middleware: owner punya full access, user biasa hanya bisa akses shop
 bot.use((ctx, next) => {
-  if (ctx.from && ctx.from.id !== config.OWNER_ID) {
-    return ctx.reply("⛔ Akses ditolak. Bot ini hanya untuk owner.");
-  }
+  // Allow all users - shop features accessible to everyone
   return next();
 });
 
 // ==================== COMMAND /start ====================
 bot.start((ctx) => {
   userStates.delete(ctx.from.id);
+
+  // Jika bukan owner, tampilkan menu user (shop)
+  if (ctx.from.id !== config.OWNER_ID) {
+    const db = require("./db");
+    const userId = ctx.from.id;
+    const balance = db.getUserBalance(userId);
+    const username = ctx.from.username || ctx.from.first_name || "User";
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+    return ctx.reply(
+      `👋 Ola, *${username}* [OPEN NOKTEL]!\n` +
+      `📅 ${dateStr}\n\n` +
+      `> 🪪 *MEMBER INFORMATION*\n` +
+      `> ━━━━━━━━━━━━━━━━━━\n` +
+      `> 🆔 User ID : \`${userId}\`\n` +
+      `> 💰 Saldo  : Rp ${balance.toLocaleString("id-ID")}\n` +
+      `> 📡 Status : 🟢\n` +
+      `> ━━━━━━━━━━━━━━━━━━\n\n` +
+      `_Silahkan Pilih Tombol Dibawah:_`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("🛍 Belanja", "shop_menu")],
+          [
+            Markup.button.callback("👤 Profile", "user_profile"),
+            Markup.button.callback("📦 Riwayat", "user_history"),
+          ],
+          [Markup.button.callback("📊 Stok Live", "user_stock")],
+        ]),
+      }
+    );
+  }
+
+  // Owner menu
   return ctx.reply(
     "🤖 *Selamat datang di Session Manager Bot!*\n\n" +
       "Bot ini membantu kamu mengelola sesi akun Telegram.\n\n" +
@@ -27,6 +65,8 @@ bot.start((ctx) => {
       ...Markup.inlineKeyboard([
         [Markup.button.callback("➕ Tambah Akun", "add_account")],
         [Markup.button.callback("📋 Daftar Akun", "list_accounts")],
+        [Markup.button.callback("🏪 Sell Noktel", "owner_sell_noktel")],
+        [Markup.button.callback("💰 Setting Harga", "owner_setting_harga")],
         [Markup.button.callback("📢 Broadcast", "broadcast_menu")],
         [Markup.button.callback("📡 Channel Forwarder", "cf_menu")],
         [Markup.button.callback("🔗 Join Grup", "join_menu")],
@@ -42,6 +82,45 @@ bot.start((ctx) => {
 // ==================== MENU UTAMA ====================
 bot.action("main_menu", (ctx) => {
   userStates.delete(ctx.from.id);
+
+  // Jika bukan owner, redirect ke user menu
+  if (ctx.from.id !== config.OWNER_ID) {
+    const db = require("./db");
+    const userId = ctx.from.id;
+    const balance = db.getUserBalance(userId);
+    const username = ctx.from.username || ctx.from.first_name || "User";
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+    return ctx.editMessageText(
+      `👋 Ola, *${username}* [OPEN NOKTEL]!\n` +
+      `📅 ${dateStr}\n\n` +
+      `> 🪪 *MEMBER INFORMATION*\n` +
+      `> ━━━━━━━━━━━━━━━━━━\n` +
+      `> 🆔 User ID : \`${userId}\`\n` +
+      `> 💰 Saldo  : Rp ${balance.toLocaleString("id-ID")}\n` +
+      `> 📡 Status : 🟢\n` +
+      `> ━━━━━━━━━━━━━━━━━━\n\n` +
+      `_Silahkan Pilih Tombol Dibawah:_`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("🛍 Belanja", "shop_menu")],
+          [
+            Markup.button.callback("👤 Profile", "user_profile"),
+            Markup.button.callback("📦 Riwayat", "user_history"),
+          ],
+          [Markup.button.callback("📊 Stok Live", "user_stock")],
+        ]),
+      }
+    );
+  }
+
   return ctx.editMessageText(
     "🤖 *Session Manager Bot*\n\nPilih menu di bawah:",
     {
@@ -49,6 +128,8 @@ bot.action("main_menu", (ctx) => {
       ...Markup.inlineKeyboard([
         [Markup.button.callback("➕ Tambah Akun", "add_account")],
         [Markup.button.callback("📋 Daftar Akun", "list_accounts")],
+        [Markup.button.callback("🏪 Sell Noktel", "owner_sell_noktel")],
+        [Markup.button.callback("💰 Setting Harga", "owner_setting_harga")],
         [Markup.button.callback("📢 Broadcast", "broadcast_menu")],
         [Markup.button.callback("📡 Channel Forwarder", "cf_menu")],
         [Markup.button.callback("🔗 Join Grup", "join_menu")],
@@ -63,6 +144,7 @@ bot.action("main_menu", (ctx) => {
 
 // ==================== TAMBAH AKUN ====================
 bot.action("add_account", (ctx) => {
+  if (ctx.from.id !== config.OWNER_ID) return ctx.answerCbQuery("⛔ Akses ditolak.", { show_alert: true });
   userStates.set(ctx.from.id, { step: "waiting_phone" });
   return ctx.editMessageText(
     "📱 *Tambah Akun Baru*\n\n" +
@@ -512,6 +594,14 @@ const { handleBroadcastText, handleBroadcastMedia, handleJoinText } = registerBr
 const { registerChannelForwarderHandlers } = require("./channelForwarderHandler");
 const { handleCFText } = registerChannelForwarderHandlers(bot, userStates);
 
+// ==================== SHOP (USER) ====================
+const { registerShopHandlers } = require("./shopHandler");
+const { handleShopText, handleShopPhoto } = registerShopHandlers(bot, userStates);
+
+// ==================== OWNER SHOP ====================
+const { registerOwnerShopHandlers } = require("./ownerShopHandler");
+const { handleOwnerShopText } = registerOwnerShopHandlers(bot, userStates);
+
 // ==================== HAPUS AKUN ====================
 bot.action("delete_account", (ctx) => {
   const sessions = sessionManager.getAllSessions();
@@ -927,11 +1017,94 @@ bot.action("backup_restore", (ctx) => {
       parse_mode: "Markdown",
       ...Markup.inlineKeyboard([
         [Markup.button.callback("📦 Backup Session", "do_backup")],
+        [Markup.button.callback("📁 Backup Semua File", "do_backup_all")],
         [Markup.button.callback("📥 Pulihkan Session", "do_restore")],
         [Markup.button.callback("◀️ Kembali", "main_menu")],
       ]),
     }
   );
+});
+
+// ---------- BACKUP SEMUA FILE (ZIP) ----------
+bot.action("do_backup_all", async (ctx) => {
+  await ctx.editMessageText("⏳ Membuat backup semua file...", {
+    parse_mode: "Markdown",
+  });
+
+  try {
+    const archiver = require("archiver");
+    const fs = require("fs");
+    const path = require("path");
+
+    const backupDir = "./backups";
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const zipFileName = `backup_all_${timestamp}.zip`;
+    const zipFilePath = path.join(backupDir, zipFileName);
+
+    const output = fs.createWriteStream(zipFilePath);
+    const archive = archiver("zip", { zlib: { level: 9 } });
+
+    await new Promise((resolve, reject) => {
+      output.on("close", resolve);
+      archive.on("error", reject);
+
+      archive.pipe(output);
+
+      // Tambahkan folder sessions
+      if (fs.existsSync("./sessions")) {
+        archive.directory("./sessions", "sessions");
+      }
+      // Tambahkan folder data
+      if (fs.existsSync("./data")) {
+        archive.directory("./data", "data");
+      }
+      // Tambahkan file konfigurasi
+      const configFiles = [".env", "config.js", "package.json"];
+      configFiles.forEach((f) => {
+        if (fs.existsSync(f)) {
+          archive.file(f, { name: f });
+        }
+      });
+
+      archive.finalize();
+    });
+
+    // Kirim file zip ke owner
+    await ctx.replyWithDocument(
+      { source: zipFilePath, filename: zipFileName },
+      {
+        caption:
+          `📁 *Backup Semua File Berhasil!*\n\n` +
+          `📦 File: \`${zipFileName}\`\n` +
+          `📅 Waktu: ${new Date().toLocaleString("id-ID")}\n\n` +
+          `_Berisi: sessions, data, config_`,
+        parse_mode: "Markdown",
+      }
+    );
+
+    // Hapus file zip temporary
+    fs.unlinkSync(zipFilePath);
+
+    return ctx.editMessageText("✅ File backup ZIP telah dikirim di atas.", {
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("◀️ Menu Utama", "main_menu")],
+      ]),
+    });
+  } catch (err) {
+    return ctx.editMessageText(
+      `❌ Gagal backup semua file:\n\`${err.message}\``,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("◀️ Kembali", "backup_restore")],
+        ]),
+      }
+    );
+  }
 });
 
 // ---------- BACKUP: Kirim file backup ke owner ----------
@@ -1130,6 +1303,11 @@ bot.on("photo", async (ctx) => {
   const userId = ctx.from.id;
   const state = userStates.get(userId);
   if (!state) return;
+
+  // Shop deposit proof handler
+  const shopResult = handleShopPhoto(ctx, userId, state);
+  if (shopResult) return shopResult;
+
   const result = handleBroadcastMedia(ctx, userId, state);
   if (result) return result;
 });
@@ -1164,11 +1342,22 @@ bot.on("text", async (ctx) => {
   const state = userStates.get(userId);
 
   if (!state) {
-    // Tidak ada state, tampilkan menu
+    // Tidak ada state - untuk user biasa tampilkan menu shop, owner tampilkan start
+    if (ctx.from.id !== config.OWNER_ID) {
+      return ctx.reply("Ketik /start untuk memulai belanja.");
+    }
     return ctx.reply("Ketik /start untuk memulai.");
   }
 
   const text = ctx.message.text.trim();
+
+  // ---------- SHOP TEXT HANDLERS ----------
+  const shopResult = handleShopText(ctx, userId, state, text);
+  if (shopResult) return shopResult;
+
+  // ---------- OWNER SHOP TEXT HANDLERS ----------
+  const ownerShopResult = handleOwnerShopText(ctx, userId, state, text);
+  if (ownerShopResult) return ownerShopResult;
 
   // ---------- BROADCAST TEXT HANDLERS ----------
   const bcResult = handleBroadcastText(ctx, userId, state, text);
