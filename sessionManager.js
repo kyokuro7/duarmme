@@ -949,37 +949,97 @@ async function getOTPCode(phone) {
     );
     await client.connect();
 
-    // Baca pesan terbaru dari Telegram (777000 = akun resmi Telegram)
-    // Langsung ambil tanpa request OTP baru
-    const messages = await client.getMessages(777000, { limit: 5 });
+    let messages = [];
+
+    // Cara 1: Resolve entity 777000 (akun official Telegram pengirim OTP)
+    try {
+      const telegramEntity = await client.getEntity("777000");
+      messages = await client.getMessages(telegramEntity, { limit: 5 });
+    } catch (e1) {
+      // Cara 2: Coba dengan angka langsung
+      try {
+        messages = await client.getMessages("777000", { limit: 5 });
+      } catch (e2) {
+        // Cara 3: Iterasi dialog, cari chat dari Telegram (id 777000)
+        try {
+          const dialogs = await client.getDialogs({ limit: 30 });
+          for (const dialog of dialogs) {
+            const ent = dialog.entity;
+            if (!ent) continue;
+            const entId = ent.id ? ent.id.toString() : "";
+            if (entId === "777000" || (ent.id && ent.id.value && ent.id.value.toString() === "777000")) {
+              messages = await client.getMessages(ent, { limit: 5 });
+              break;
+            }
+          }
+        } catch (e3) {}
+      }
+    }
+
+    // Cara 4: Jika masih kosong, coba ServiceNotifications (42777)
+    if (!messages || messages.length === 0) {
+      try {
+        const svcEntity = await client.getEntity("42777");
+        messages = await client.getMessages(svcEntity, { limit: 5 });
+      } catch (e) {}
+    }
+
+    // Cara 5: Fallback - cari di dialog yang namanya "Telegram"
+    if (!messages || messages.length === 0) {
+      try {
+        const dialogs = await client.getDialogs({ limit: 15 });
+        for (const dialog of dialogs) {
+          if (!dialog.isUser) continue;
+          const ent = dialog.entity;
+          if (!ent) continue;
+          const name = ((ent.firstName || "") + " " + (ent.lastName || "")).trim().toLowerCase();
+          if (name === "telegram" || name.includes("telegram")) {
+            messages = await client.getMessages(ent, { limit: 5 });
+            if (messages && messages.length > 0) break;
+          }
+        }
+      } catch (e) {}
+    }
 
     await client.disconnect();
 
     if (!messages || messages.length === 0) {
       return {
         success: false,
-        error: "Tidak ada pesan dari Telegram di akun ini.",
+        error: "Tidak ada pesan dari Telegram di akun ini. Pastikan OTP sudah masuk.",
       };
     }
 
     // Cari kode OTP dari pesan terbaru ke lama
-    // Format bisa: "12345", "Login code: 12345", "your code is 12345"
     for (const msg of messages) {
-      const msgText = msg.message || "";
-      const codeMatch = msgText.match(/(\d{5,6})/);
+      const msgText = msg.message || msg.text || "";
+      if (!msgText) continue;
+
+      // Match pola OTP: "Login code: 12345", "code is 12345", angka 5-6 digit
+      let codeMatch = msgText.match(/(?:login code|code|kode)[:\s]+(\d{4,6})/i);
+      if (!codeMatch) {
+        codeMatch = msgText.match(/(\d{5,6})/);
+      }
+      if (!codeMatch) {
+        codeMatch = msgText.match(/(\d{4})/);
+      }
+
       if (codeMatch) {
         return {
           success: true,
           code: codeMatch[1],
-          msgPreview: msgText.substring(0, 120),
-          msgDate: msg.date, // unix timestamp
+          msgPreview: msgText.substring(0, 150),
+          msgDate: msg.date,
         };
       }
     }
 
+    // Jika regex tidak match, tampilkan pesan terakhir
+    const lastMsg = messages[0];
+    const lastMsgText = lastMsg.message || lastMsg.text || "(kosong)";
     return {
       success: false,
-      error: "Kode OTP tidak ditemukan di pesan terakhir. Pastikan sudah ada OTP yang masuk ke akun ini.",
+      error: "OTP tidak terdeteksi otomatis.\n\nPesan terakhir:\n\"" + lastMsgText.substring(0, 200) + "\"",
     };
   } catch (err) {
     try { if (client) await client.disconnect(); } catch (e) {}
