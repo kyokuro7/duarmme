@@ -313,7 +313,7 @@ function getTransactionsByUser(userId) {
 const PAYMENT_FILE = path.join(DB_DIR, "payment_config.json");
 
 const DEFAULT_PAYMENT = {
-  qris: "- QRIS: (Atur QRIS statis kamu di sini)",
+  qris_url: "https://example.com/qris-kamu.jpg",
   dana: "- Dana: (Atur nomor Dana kamu di sini)",
   gopay: "- GoPay: (Atur nomor GoPay kamu di sini)",
 };

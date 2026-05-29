@@ -525,12 +525,19 @@ function registerShopHandlers(bot, userStates) {
       payText += `🆔 ID Deposit: \`${deposit.id}\`\n\n`;
       payText += `━━━━━━━━━━━━━━━━━━\n`;
       payText += `📱 *Metode Pembayaran:*\n\n`;
-      payText += `${paymentConfig.qris}\n`;
       payText += `${paymentConfig.dana}\n`;
       payText += `${paymentConfig.gopay}\n`;
       payText += `━━━━━━━━━━━━━━━━━━\n\n`;
       payText += `⚠️ Transfer sesuai nominal di atas.\n`;
       payText += `📸 Setelah transfer, kirim *screenshot bukti transfer* ke sini.`;
+
+      // Kirim QRIS sebagai foto jika ada URL
+      if (paymentConfig.qris_url) {
+        ctx.replyWithPhoto(paymentConfig.qris_url, {
+          caption: `📱 *QRIS Statis*\n\nScan QR di atas untuk pembayaran.`,
+          parse_mode: "Markdown",
+        });
+      }
 
       return ctx.reply(payText, {
         parse_mode: "Markdown",
@@ -697,6 +704,7 @@ function registerShopHandlers(bot, userStates) {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
           [Markup.button.callback("🛍 Belanja", "shop_menu")],
+          [Markup.button.callback("💳 Deposit", "shop_deposit")],
           [
             Markup.button.callback("👤 Profile", "user_profile"),
             Markup.button.callback("📦 Riwayat", "user_history"),

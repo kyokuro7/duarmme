@@ -45,6 +45,7 @@ bot.start((ctx) => {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
           [Markup.button.callback("🛍 Belanja", "shop_menu")],
+          [Markup.button.callback("💳 Deposit", "shop_deposit")],
           [
             Markup.button.callback("👤 Profile", "user_profile"),
             Markup.button.callback("📦 Riwayat", "user_history"),
@@ -111,6 +112,7 @@ bot.action("main_menu", (ctx) => {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
           [Markup.button.callback("🛍 Belanja", "shop_menu")],
+          [Markup.button.callback("💳 Deposit", "shop_deposit")],
           [
             Markup.button.callback("👤 Profile", "user_profile"),
             Markup.button.callback("📦 Riwayat", "user_history"),
