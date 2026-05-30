@@ -54,15 +54,180 @@ function registerOwnerShopHandlers(bot, userStates) {
       const count = prefixMap[p].length;
       return [Markup.button.callback(`🆔 ID ${p} (${count} akun)`, `sell_prefix_${p}`)];
     });
+    buttons.push([Markup.button.callback("🗑 Kelola Daftar Jual", "sell_manage_list")]);
     buttons.push([Markup.button.callback("◀️ Kembali", "main_menu")]);
 
     return ctx.editMessageText(
-      "🏪 *Sell Noktel*\n\nPilih awalan ID akun yang ingin dijual:",
+      "🏪 *Sell Noktel*\n\nPilih awalan ID akun yang ingin dijual:\n\n_Atau kelola daftar akun yang sudah dijual._",
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard(buttons),
       }
     );
+  });
+
+  // ==================== KELOLA DAFTAR JUAL (HAPUS DARI DAFTAR) ====================
+  bot.action("sell_manage_list", (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+
+    const available = db.getAvailableAccounts();
+    if (available.length === 0) {
+      return ctx.editMessageText(
+        "🗑 *Kelola Daftar Jual*\n\nBelum ada akun di daftar jual.",
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("◀️ Kembali", "owner_sell_noktel")],
+          ]),
+        }
+      );
+    }
+
+    const buttons = available.slice(0, 20).map((a) => {
+      const id = a.info.id || a.phone;
+      const limitStatus = a.info.isLimited ? "🚫" : "✅";
+      return [Markup.button.callback(`${limitStatus} ${id}`, `sell_manage_detail_${a.phone}`)];
+    });
+    buttons.push([Markup.button.callback("◀️ Kembali", "owner_sell_noktel")]);
+
+    return ctx.editMessageText(
+      `🗑 *Kelola Daftar Jual*\n\n` +
+      `Total: ${available.length} akun di daftar jual\n\n` +
+      `Pilih akun untuk mengelola (hapus dari daftar/ubah status):`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard(buttons),
+      }
+    );
+  });
+
+  // ==================== DETAIL AKUN DI DAFTAR JUAL ====================
+  bot.action(/^sell_manage_detail_(.+)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const phone = ctx.match[1];
+    const account = db.getShopAccount(phone);
+
+    if (!account) {
+      return ctx.answerCbQuery("❌ Akun tidak ditemukan di daftar jual.", { show_alert: true });
+    }
+
+    const info = account.info || {};
+    const id = info.id || phone;
+    const limitStatus = info.isLimited ? "Limit 🚫" : "Aman ✅";
+
+    return ctx.editMessageText(
+      `⚙️ *Kelola Akun di Daftar Jual*\n\n` +
+      `🆔 ID: \`${id}\`\n` +
+      `📞 Nomor: \`${phone}\`\n` +
+      `⚠️ Status: ${limitStatus}\n\n` +
+      `Pilih aksi:`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("✅ Set Aman", `sell_set_aman_${phone}`)],
+          [Markup.button.callback("🚫 Set Limit", `sell_set_limit_${phone}`)],
+          [Markup.button.callback("🗑 Hapus dari Daftar Jual", `sell_remove_confirm_${phone}`)],
+          [Markup.button.callback("◀️ Kembali", "sell_manage_list")],
+        ]),
+      }
+    );
+  });
+
+  // ==================== SET STATUS MANUAL: AMAN ====================
+  bot.action(/^sell_set_aman_(.+)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const phone = ctx.match[1];
+
+    db.updateShopAccountStatus(phone, false);
+    // Update juga di session manager
+    sessionManager.updateSessionInfo(phone, { isLimited: false });
+
+    return ctx.editMessageText(
+      `✅ Status akun \`${phone}\` diubah menjadi *Aman ✅*`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("◀️ Kembali ke Daftar", "sell_manage_list")],
+          [Markup.button.callback("◀️ Menu Utama", "main_menu")],
+        ]),
+      }
+    );
+  });
+
+  // ==================== SET STATUS MANUAL: LIMIT ====================
+  bot.action(/^sell_set_limit_(.+)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const phone = ctx.match[1];
+
+    db.updateShopAccountStatus(phone, true);
+    // Update juga di session manager
+    sessionManager.updateSessionInfo(phone, { isLimited: true });
+
+    return ctx.editMessageText(
+      `🚫 Status akun \`${phone}\` diubah menjadi *Limit 🚫*`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("◀️ Kembali ke Daftar", "sell_manage_list")],
+          [Markup.button.callback("◀️ Menu Utama", "main_menu")],
+        ]),
+      }
+    );
+  });
+
+  // ==================== HAPUS DARI DAFTAR JUAL - KONFIRMASI ====================
+  bot.action(/^sell_remove_confirm_(.+)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const phone = ctx.match[1];
+    const account = db.getShopAccount(phone);
+    const id = (account && account.info.id) || phone;
+
+    return ctx.editMessageText(
+      `⚠️ *Konfirmasi Hapus dari Daftar Jual*\n\n` +
+      `🆔 ID: \`${id}\`\n` +
+      `📞 Nomor: \`${phone}\`\n\n` +
+      `Akun ini akan dihapus dari daftar jual (tidak bisa dibeli buyer).\n` +
+      `Akun *TIDAK* dihapus dari database session.\n\n` +
+      `Yakin?`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("✅ Ya, Hapus dari Daftar", `sell_remove_exec_${phone}`)],
+          [Markup.button.callback("❌ Batal", `sell_manage_detail_${phone}`)],
+        ]),
+      }
+    );
+  });
+
+  // ==================== EKSEKUSI HAPUS DARI DAFTAR JUAL ====================
+  bot.action(/^sell_remove_exec_(.+)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const phone = ctx.match[1];
+
+    const removed = db.removeShopAccount(phone);
+
+    if (removed) {
+      return ctx.editMessageText(
+        `✅ Akun \`${phone}\` berhasil dihapus dari daftar jual.`,
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("🗑 Kelola Daftar Lain", "sell_manage_list")],
+            [Markup.button.callback("◀️ Menu Utama", "main_menu")],
+          ]),
+        }
+      );
+    } else {
+      return ctx.editMessageText(
+        `❌ Gagal menghapus akun dari daftar jual.`,
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("◀️ Kembali", "sell_manage_list")],
+          ]),
+        }
+      );
+    }
   });
 
 
@@ -128,17 +293,98 @@ function registerOwnerShopHandlers(bot, userStates) {
 
     const name = account.info.firstName || "Unknown";
     const id = account.info.id || phone;
+    const limitStatus = account.info.isLimited === true
+      ? "Limit 🚫"
+      : account.info.isLimited === false
+      ? "Aman ✅"
+      : "Belum diset";
 
     return ctx.editMessageText(
       `🏪 *Konfirmasi Jual Akun*\n\n` +
       `🆔 ID: \`${id}\`\n` +
       `👤 Nama: ${name}\n` +
-      `📞 Nomor: \`${phone}\`\n\n` +
-      `Anda yakin ingin menjual akun ini?`,
+      `📞 Nomor: \`${phone}\`\n` +
+      `⚠️ Status: ${limitStatus}\n\n` +
+      `Set status akun sebelum dijual, lalu konfirmasi:`,
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [Markup.button.callback("✅ Konfirmasi", `sell_confirm_${phone}`)],
+          [
+            Markup.button.callback("✅ Set Aman", `sell_setstatus_aman_${phone}`),
+            Markup.button.callback("🚫 Set Limit", `sell_setstatus_limit_${phone}`),
+          ],
+          [Markup.button.callback("✅ Konfirmasi Jual", `sell_confirm_${phone}`)],
+          [Markup.button.callback("❌ Batal", "owner_sell_noktel")],
+        ]),
+      }
+    );
+  });
+
+  // ==================== SET STATUS SEBELUM JUAL ====================
+  bot.action(/^sell_setstatus_aman_(.+)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const phone = ctx.match[1];
+    sessionManager.updateSessionInfo(phone, { isLimited: false });
+    ctx.answerCbQuery("✅ Status diset: Aman", { show_alert: false });
+
+    // Re-render konfirmasi
+    const sessions = sessionManager.getAllSessions();
+    const account = sessions.find((s) => s.phone === phone);
+    if (!account) return;
+
+    const name = account.info.firstName || "Unknown";
+    const id = account.info.id || phone;
+
+    return ctx.editMessageText(
+      `🏪 *Konfirmasi Jual Akun*\n\n` +
+      `🆔 ID: \`${id}\`\n` +
+      `👤 Nama: ${name}\n` +
+      `📞 Nomor: \`${phone}\`\n` +
+      `⚠️ Status: Aman ✅\n\n` +
+      `Set status akun sebelum dijual, lalu konfirmasi:`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("✅ Set Aman", `sell_setstatus_aman_${phone}`),
+            Markup.button.callback("🚫 Set Limit", `sell_setstatus_limit_${phone}`),
+          ],
+          [Markup.button.callback("✅ Konfirmasi Jual", `sell_confirm_${phone}`)],
+          [Markup.button.callback("❌ Batal", "owner_sell_noktel")],
+        ]),
+      }
+    );
+  });
+
+  bot.action(/^sell_setstatus_limit_(.+)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const phone = ctx.match[1];
+    sessionManager.updateSessionInfo(phone, { isLimited: true });
+    ctx.answerCbQuery("🚫 Status diset: Limit", { show_alert: false });
+
+    // Re-render konfirmasi
+    const sessions = sessionManager.getAllSessions();
+    const account = sessions.find((s) => s.phone === phone);
+    if (!account) return;
+
+    const name = account.info.firstName || "Unknown";
+    const id = account.info.id || phone;
+
+    return ctx.editMessageText(
+      `🏪 *Konfirmasi Jual Akun*\n\n` +
+      `🆔 ID: \`${id}\`\n` +
+      `👤 Nama: ${name}\n` +
+      `📞 Nomor: \`${phone}\`\n` +
+      `⚠️ Status: Limit 🚫\n\n` +
+      `Set status akun sebelum dijual, lalu konfirmasi:`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("✅ Set Aman", `sell_setstatus_aman_${phone}`),
+            Markup.button.callback("🚫 Set Limit", `sell_setstatus_limit_${phone}`),
+          ],
+          [Markup.button.callback("✅ Konfirmasi Jual", `sell_confirm_${phone}`)],
           [Markup.button.callback("❌ Batal", "owner_sell_noktel")],
         ]),
       }

@@ -215,6 +215,18 @@ function removeShopAccount(phone) {
   return accounts.length < before;
 }
 
+/**
+ * Update status limit/aman akun di daftar jual
+ */
+function updateShopAccountStatus(phone, isLimited) {
+  const accounts = readJSON(DB_FILES.shopAccounts);
+  const idx = accounts.findIndex((a) => a.phone === phone);
+  if (idx === -1) return false;
+  accounts[idx].info.isLimited = isLimited;
+  writeJSON(DB_FILES.shopAccounts, accounts);
+  return true;
+}
+
 // ==================== USER / SALDO ====================
 
 function getUser(userId) {
@@ -400,6 +412,7 @@ module.exports = {
   markAccountSold,
   getShopAccount,
   removeShopAccount,
+  updateShopAccountStatus,
 
   // Users
   getUser,
