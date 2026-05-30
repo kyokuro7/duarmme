@@ -14,6 +14,9 @@ module.exports = {
   // Channel ID untuk notifikasi pembelian & deposit
   NOTIFICATION_CHANNEL_ID: process.env.NOTIFICATION_CHANNEL_ID || null,
 
+  // Bot username (tanpa @) untuk link button di channel notif
+  BOT_USERNAME: process.env.BOT_USERNAME || null,
+
   // Direktori untuk menyimpan file sesi
   SESSIONS_DIR: "./sessions",
 };

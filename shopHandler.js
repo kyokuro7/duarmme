@@ -365,7 +365,18 @@ function registerShopHandlers(bot, userStates) {
           `🕒 Time      : ${timeStr}\n` +
           `──────────────────────`;
 
-        await ctx.telegram.sendMessage(config.NOTIFICATION_CHANNEL_ID, notifText);
+        const notifButtons = [];
+        if (config.BOT_USERNAME) {
+          notifButtons.push([Markup.button.url("🛍 BELI NOKTEL LAGI", `https://t.me/${config.BOT_USERNAME}?start=shop`)]);
+        }
+
+        if (notifButtons.length > 0) {
+          await ctx.telegram.sendMessage(config.NOTIFICATION_CHANNEL_ID, notifText, {
+            ...Markup.inlineKeyboard(notifButtons),
+          });
+        } else {
+          await ctx.telegram.sendMessage(config.NOTIFICATION_CHANNEL_ID, notifText);
+        }
       } catch (e) {
         // Gagal kirim notifikasi channel, lanjut saja
       }

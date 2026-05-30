@@ -17,12 +17,30 @@ bot.use((ctx, next) => {
 bot.start((ctx) => {
   userStates.delete(ctx.from.id);
 
+  // Handle deep link dari channel notification (start=shop)
+  const payload = ctx.startPayload;
+
   // Jika bukan owner, tampilkan menu user (shop)
   if (ctx.from.id !== config.OWNER_ID) {
     const db = require("./db");
     const userId = ctx.from.id;
     const balance = db.getUserBalance(userId);
     const username = ctx.from.username || ctx.from.first_name || "User";
+
+    // Jika deep link "shop", langsung ke menu belanja
+    if (payload === "shop") {
+      return ctx.reply(
+        "🛍 *Belanja Noktel*\n\nPilih jenis pembelian:",
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("📦 Satuan", "shop_satuan")],
+            [Markup.button.callback("📦📦 Bulk", "shop_bulk")],
+            [Markup.button.callback("◀️ Kembali", "user_main_menu")],
+          ]),
+        }
+      );
+    }
 
     const now = new Date();
     const dateStr = now.toLocaleDateString("id-ID", {
