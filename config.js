@@ -11,6 +11,9 @@ module.exports = {
   // Owner ID - hanya user ini yang bisa menggunakan bot
   OWNER_ID: parseInt(process.env.OWNER_ID),
 
+  // Channel ID untuk notifikasi pembelian & deposit
+  NOTIFICATION_CHANNEL_ID: process.env.NOTIFICATION_CHANNEL_ID || null,
+
   // Direktori untuk menyimpan file sesi
   SESSIONS_DIR: "./sessions",
 };

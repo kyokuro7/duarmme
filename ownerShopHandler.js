@@ -193,15 +193,20 @@ function registerOwnerShopHandlers(bot, userStates) {
     // Tampilkan prefix yang ada
     const allPrefixes = Object.keys(prices).sort();
     const buttons = allPrefixes.map((p) => {
+      const priceData = prices[p];
+      const limitPrice = (typeof priceData === "object") ? priceData.limit : priceData;
+      const amanPrice = (typeof priceData === "object") ? priceData.aman : priceData;
       return [Markup.button.callback(
-        `🆔 ID ${p} - Rp ${prices[p].toLocaleString("id-ID")}`,
+        `🆔 ID ${p} - L: Rp ${limitPrice.toLocaleString("id-ID")} | A: Rp ${amanPrice.toLocaleString("id-ID")}`,
         `price_view_${p}`
       )];
     });
     buttons.push([Markup.button.callback("◀️ Kembali", "main_menu")]);
 
     return ctx.editMessageText(
-      "💰 *Setting Harga*\n\nPilih ID untuk melihat/mengubah harga:",
+      "💰 *Setting Harga*\n\n" +
+      "_L = Limit | A = Aman_\n\n" +
+      "Pilih ID untuk melihat/mengubah harga:",
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard(buttons),
@@ -214,13 +219,22 @@ function registerOwnerShopHandlers(bot, userStates) {
     if (ctx.from.id !== config.OWNER_ID) return;
     const prefix = ctx.match[1];
     const prices = db.getPrices();
-    const currentPrice = prices[prefix] || 0;
-    const defaultPrice = db.DEFAULT_PRICES[prefix] || 0;
+    const priceData = prices[prefix] || { limit: 0, aman: 0 };
+    const limitPrice = (typeof priceData === "object") ? priceData.limit : priceData;
+    const amanPrice = (typeof priceData === "object") ? priceData.aman : priceData;
+
+    const defaultData = db.DEFAULT_PRICES[prefix] || { limit: 0, aman: 0 };
+    const defLimit = (typeof defaultData === "object") ? defaultData.limit : defaultData;
+    const defAman = (typeof defaultData === "object") ? defaultData.aman : defaultData;
 
     return ctx.editMessageText(
       `💰 *Harga ID ${prefix}*\n\n` +
-      `Harga saat ini: *Rp ${currentPrice.toLocaleString("id-ID")}*\n` +
-      `Harga default: Rp ${defaultPrice.toLocaleString("id-ID")}`,
+      `🚫 *Limit:*\n` +
+      `   Saat ini: *Rp ${limitPrice.toLocaleString("id-ID")}*\n` +
+      `   Default: Rp ${defLimit.toLocaleString("id-ID")}\n\n` +
+      `✅ *Aman:*\n` +
+      `   Saat ini: *Rp ${amanPrice.toLocaleString("id-ID")}*\n` +
+      `   Default: Rp ${defAman.toLocaleString("id-ID")}`,
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
@@ -232,20 +246,68 @@ function registerOwnerShopHandlers(bot, userStates) {
   });
 
 
-  // ==================== UBAH HARGA ====================
+  // ==================== UBAH HARGA - PILIH TIPE ====================
   bot.action(/^price_change_(\d)$/, (ctx) => {
     if (ctx.from.id !== config.OWNER_ID) return;
     const prefix = ctx.match[1];
-    userStates.set(ctx.from.id, { step: "owner_price_input", pricePrefix: prefix });
 
     return ctx.editMessageText(
       `✏️ *Ubah Harga ID ${prefix}*\n\n` +
+      `Pilih tipe harga yang ingin diubah:`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("🚫 Harga Limit", `price_set_limit_${prefix}`)],
+          [Markup.button.callback("✅ Harga Aman", `price_set_aman_${prefix}`)],
+          [Markup.button.callback("◀️ Kembali", `price_view_${prefix}`)],
+        ]),
+      }
+    );
+  });
+
+  // ==================== INPUT HARGA LIMIT ====================
+  bot.action(/^price_set_limit_(\d)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const prefix = ctx.match[1];
+    userStates.set(ctx.from.id, { step: "owner_price_input", pricePrefix: prefix, priceType: "limit" });
+
+    const prices = db.getPrices();
+    const priceData = prices[prefix] || { limit: 0, aman: 0 };
+    const currentPrice = (typeof priceData === "object") ? priceData.limit : priceData;
+
+    return ctx.editMessageText(
+      `✏️ *Ubah Harga Limit - ID ${prefix}*\n\n` +
+      `Harga saat ini: *Rp ${currentPrice.toLocaleString("id-ID")}*\n\n` +
+      `Masukkan harga baru (angka saja):\n` +
+      `_Contoh: 5000_`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("❌ Batal", `price_change_${prefix}`)],
+        ]),
+      }
+    );
+  });
+
+  // ==================== INPUT HARGA AMAN ====================
+  bot.action(/^price_set_aman_(\d)$/, (ctx) => {
+    if (ctx.from.id !== config.OWNER_ID) return;
+    const prefix = ctx.match[1];
+    userStates.set(ctx.from.id, { step: "owner_price_input", pricePrefix: prefix, priceType: "aman" });
+
+    const prices = db.getPrices();
+    const priceData = prices[prefix] || { limit: 0, aman: 0 };
+    const currentPrice = (typeof priceData === "object") ? priceData.aman : priceData;
+
+    return ctx.editMessageText(
+      `✏️ *Ubah Harga Aman - ID ${prefix}*\n\n` +
+      `Harga saat ini: *Rp ${currentPrice.toLocaleString("id-ID")}*\n\n` +
       `Masukkan harga baru (angka saja):\n` +
       `_Contoh: 7500_`,
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [Markup.button.callback("❌ Batal", "owner_setting_harga")],
+          [Markup.button.callback("❌ Batal", `price_change_${prefix}`)],
         ]),
       }
     );
@@ -260,12 +322,15 @@ function registerOwnerShopHandlers(bot, userStates) {
       }
 
       const prefix = state.pricePrefix;
-      db.setPrice(prefix, price);
+      const priceType = state.priceType || "aman";
+      db.setPrice(prefix, price, priceType);
       userStates.delete(userId);
+
+      const typeLabel = priceType === "limit" ? "Limit 🚫" : "Aman ✅";
 
       return ctx.reply(
         `✅ *Harga berhasil diubah!*\n\n` +
-        `🆔 ID ${prefix}: *Rp ${price.toLocaleString("id-ID")}*`,
+        `🆔 ID ${prefix} (${typeLabel}): *Rp ${price.toLocaleString("id-ID")}*`,
         {
           parse_mode: "Markdown",
           ...Markup.inlineKeyboard([
