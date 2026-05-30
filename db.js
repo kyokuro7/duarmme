@@ -39,37 +39,63 @@ function writeJSON(filePath, data) {
 
 // ==================== HARGA ====================
 
-// Default harga per ID awalan
+// Default harga per ID awalan (limit & aman berbeda)
 const DEFAULT_PRICES = {
-  "1": 9000,
-  "2": 8000,
-  "3": 7500,
-  "4": 7000,
-  "5": 6000,
-  "6": 6000,
-  "7": 5000,
-  "8": 4000,
+  "1": { limit: 7000, aman: 9000 },
+  "2": { limit: 6000, aman: 8000 },
+  "3": { limit: 5500, aman: 7500 },
+  "4": { limit: 5000, aman: 7000 },
+  "5": { limit: 4500, aman: 6000 },
+  "6": { limit: 4500, aman: 6000 },
+  "7": { limit: 3500, aman: 5000 },
+  "8": { limit: 2500, aman: 4000 },
 };
 
 function getPrices() {
   const prices = readJSON(DB_FILES.prices, null);
   if (!prices || Object.keys(prices).length === 0) {
     writeJSON(DB_FILES.prices, DEFAULT_PRICES);
-    return { ...DEFAULT_PRICES };
+    return JSON.parse(JSON.stringify(DEFAULT_PRICES));
   }
-  return prices;
+  // Migrasi dari format lama (angka) ke format baru (object limit/aman)
+  let needMigrate = false;
+  const migrated = { ...prices };
+  for (const key of Object.keys(migrated)) {
+    if (typeof migrated[key] === "number") {
+      migrated[key] = { limit: Math.round(migrated[key] * 0.7), aman: migrated[key] };
+      needMigrate = true;
+    }
+  }
+  if (needMigrate) {
+    writeJSON(DB_FILES.prices, migrated);
+  }
+  return migrated;
 }
 
-function setPrice(idPrefix, price) {
+function setPrice(idPrefix, price, type) {
   const prices = getPrices();
-  prices[idPrefix] = price;
+  if (!prices[idPrefix] || typeof prices[idPrefix] !== "object") {
+    prices[idPrefix] = { limit: 0, aman: 0 };
+  }
+  if (type === "limit") {
+    prices[idPrefix].limit = price;
+  } else if (type === "aman") {
+    prices[idPrefix].aman = price;
+  } else {
+    // Set both jika type tidak ditentukan
+    prices[idPrefix] = { limit: price, aman: price };
+  }
   writeJSON(DB_FILES.prices, prices);
   return prices;
 }
 
-function getPrice(idPrefix) {
+function getPrice(idPrefix, isLimited) {
   const prices = getPrices();
-  return prices[idPrefix] || prices["8"] || 4000; // fallback ke harga terendah
+  const priceData = prices[idPrefix] || prices["8"] || { limit: 2500, aman: 4000 };
+  if (typeof priceData === "number") {
+    return priceData; // fallback format lama
+  }
+  return isLimited ? (priceData.limit || 2500) : (priceData.aman || 4000);
 }
 
 // ==================== AKUN SHOP ====================

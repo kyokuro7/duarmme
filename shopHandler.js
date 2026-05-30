@@ -87,7 +87,8 @@ function registerShopHandlers(bot, userStates) {
     const prices = db.getPrices();
     const buttons = prefixes.map((p) => {
       const count = db.getAccountsByPrefix(p, isLimited).length;
-      const price = prices[p] || "?";
+      const priceData = prices[p] || { limit: 2500, aman: 4000 };
+      const price = isLimited ? (priceData.limit || 0) : (priceData.aman || 0);
       return [Markup.button.callback(
         `🆔 ID ${p} (${count} akun) - Rp ${price.toLocaleString("id-ID")}`,
         `shop_prefix_${p}`
@@ -200,6 +201,7 @@ function registerShopHandlers(bot, userStates) {
     const tos = db.getTOS();
     const phones = state.selectedPhones || [];
     const prices = db.getPrices();
+    const isLimited = state.isLimited;
     let totalPrice = 0;
 
     phones.forEach((phone) => {
@@ -207,13 +209,17 @@ function registerShopHandlers(bot, userStates) {
       if (acc) {
         const id = acc.info.id || "";
         const prefix = id.charAt(0) || "8";
-        totalPrice += prices[prefix] || 4000;
+        const priceData = prices[prefix] || { limit: 2500, aman: 4000 };
+        const price = isLimited ? (priceData.limit || 2500) : (priceData.aman || 4000);
+        totalPrice += price;
       }
     });
 
+    const statusText = isLimited ? "Limit" : "Aman";
     let text = `${tos}\n\n`;
     text += `━━━━━━━━━━━━━━━━━━\n`;
     text += `📦 Jumlah: ${phones.length} akun\n`;
+    text += `📋 Tipe: ${statusText}\n`;
     text += `💰 Total: *Rp ${totalPrice.toLocaleString("id-ID")}*\n`;
 
     userStates.set(ctx.from.id, { ...state, totalPrice });
@@ -332,6 +338,37 @@ function registerShopHandlers(bot, userStates) {
           [Markup.button.callback("◀️ Kembali", "shop_menu")],
         ]),
       });
+    }
+
+    // Kirim notifikasi ke channel
+    if (config.NOTIFICATION_CHANNEL_ID) {
+      try {
+        const username = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || userId);
+        const isLimited = state.isLimited;
+        const tipeAkun = isLimited ? "Limit" : "Aman";
+        const firstAcc = results[0];
+        const accId = firstAcc.info.id || firstAcc.phone;
+        const prefix = (accId + "").charAt(0) || "?";
+
+        // Waktu WIB (UTC+7)
+        const now = new Date();
+        const wib = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+        const timeStr = `${wib.getDate().toString().padStart(2, "0")}/${(wib.getMonth() + 1).toString().padStart(2, "0")}/${wib.getFullYear()} ${wib.getHours().toString().padStart(2, "0")}.${wib.getMinutes().toString().padStart(2, "0")}.${wib.getSeconds().toString().padStart(2, "0")} WIB`;
+
+        const notifText =
+          `ORDER NOKTEL SUCCES ✅\n` +
+          `──────────────────────\n` +
+          `👤 Buyer    : ${username}\n` +
+          `📦 Item      : ID ${prefix}\n` +
+          `🔢 Amount : ${results.length} account\n` +
+          `💰 Total      : Rp ${totalPrice.toLocaleString("id-ID")} (${tipeAkun})\n` +
+          `🕒 Time      : ${timeStr}\n` +
+          `──────────────────────`;
+
+        await ctx.telegram.sendMessage(config.NOTIFICATION_CHANNEL_ID, notifText);
+      } catch (e) {
+        // Gagal kirim notifikasi channel, lanjut saja
+      }
     }
 
     // Tampilkan detail akun pertama (satuan) atau semua (bulk)
@@ -613,6 +650,35 @@ function registerShopHandlers(bot, userStates) {
       { parse_mode: "Markdown" }
     );
 
+    // Kirim notifikasi deposit ke channel
+    if (config.NOTIFICATION_CHANNEL_ID) {
+      try {
+        let buyerUsername = deposit.userId;
+        try {
+          const chatMember = await ctx.telegram.getChat(deposit.userId);
+          if (chatMember.username) buyerUsername = `@${chatMember.username}`;
+          else if (chatMember.first_name) buyerUsername = chatMember.first_name;
+        } catch (e) {}
+
+        // Waktu WIB (UTC+7)
+        const now = new Date();
+        const wib = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+        const timeStr = `${wib.getDate().toString().padStart(2, "0")}/${(wib.getMonth() + 1).toString().padStart(2, "0")}/${wib.getFullYear()} ${wib.getHours().toString().padStart(2, "0")}.${wib.getMinutes().toString().padStart(2, "0")}.${wib.getSeconds().toString().padStart(2, "0")} WIB`;
+
+        const notifText =
+          `DEPOSIT SALDO SUCCES ✅\n` +
+          `──────────────────────\n` +
+          `👤 Buyer     : ${buyerUsername}\n` +
+          `💰 Deposit : Rp ${deposit.amount.toLocaleString("id-ID")}\n` +
+          `🕒 Time      : ${timeStr}\n` +
+          `──────────────────────`;
+
+        await ctx.telegram.sendMessage(config.NOTIFICATION_CHANNEL_ID, notifText);
+      } catch (e) {
+        // Gagal kirim notifikasi channel, lanjut saja
+      }
+    }
+
     // Notify user
     try {
       await ctx.telegram.sendMessage(
@@ -773,14 +839,16 @@ function registerShopHandlers(bot, userStates) {
       text += "_Belum ada stok tersedia._";
     } else {
       prefixes.forEach((p) => {
-        const count = db.getAccountsByPrefix(p, null).length;
         const safeCount = db.getAccountsByPrefix(p, false).length;
         const limitCount = db.getAccountsByPrefix(p, true).length;
-        const price = prices[p] || "?";
-        text += `🆔 ID ${p} | Rp ${price.toLocaleString("id-ID")} | `;
-        text += `Aman: ${safeCount} | Limit: ${limitCount}\n`;
+        const priceData = prices[p] || { limit: 2500, aman: 4000 };
+        const limitPrice = (typeof priceData === "object") ? priceData.limit : priceData;
+        const amanPrice = (typeof priceData === "object") ? priceData.aman : priceData;
+        text += `🆔 ID ${p}\n`;
+        text += `   ✅ Aman: ${safeCount} akun - Rp ${amanPrice.toLocaleString("id-ID")}\n`;
+        text += `   🚫 Limit: ${limitCount} akun - Rp ${limitPrice.toLocaleString("id-ID")}\n\n`;
       });
-      text += `\n📦 Total stok: ${available.length} akun`;
+      text += `📦 Total stok: ${available.length} akun`;
     }
 
     return ctx.editMessageText(text, {
