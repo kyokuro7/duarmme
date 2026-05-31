@@ -1,5 +1,6 @@
 const { Markup } = require("telegraf");
 const sessionManager = require("./sessionManager");
+const db = require("./db");
 
 // Global auto broadcast state (single toggle for all)
 let autoBroadcastState = {
@@ -128,6 +129,7 @@ function registerBroadcastHandlers(bot, userStates) {
       [Markup.button.callback(toggleLabel, "bc_toggle_auto")],
       [Markup.button.callback("📨 Set Pesan (Forward)", "bc_set_forward")],
       [Markup.button.callback("⏱ Set Jeda", "bc_set_delay")],
+      [Markup.button.callback("🚫 Blacklist Grup", "bc_blacklist_menu")],
       [Markup.button.callback("◀️ Kembali", "broadcast_menu")],
     ];
 
@@ -231,7 +233,8 @@ function registerBroadcastHandlers(bot, userStates) {
       } catch (e) {}
 
       // Forward broadcast untuk akun ini - coba forward dulu, fallback ke sendMessage
-      const result = await sessionManager.forwardBroadcast(phone, forwardInfo, grupDelay);
+      const blacklistIds = db.getBlacklist().map((g) => g.id);
+      const result = await sessionManager.forwardBroadcast(phone, forwardInfo, grupDelay, blacklistIds);
 
       if (result.success) {
         roundText += `✅ ${name}: ${result.sent}/${result.total} grup\n`;
@@ -318,8 +321,144 @@ function registerBroadcastHandlers(bot, userStates) {
   });
 
 
+  // ==================== BLACKLIST GRUP ====================
+  bot.action("bc_blacklist_menu", (ctx) => {
+    const blacklist = db.getBlacklist();
+
+    let text = "🚫 *Blacklist Grup*\n\n";
+    text += `Total blacklist: *${blacklist.length}* grup\n\n`;
+
+    if (blacklist.length > 0) {
+      blacklist.slice(0, 15).forEach((g, i) => {
+        const label = g.label ? ` (${g.label})` : "";
+        text += `${i + 1}. \`${g.id}\`${label}\n`;
+      });
+      if (blacklist.length > 15) {
+        text += `_...dan ${blacklist.length - 15} lainnya_\n`;
+      }
+    } else {
+      text += "_Belum ada grup di blacklist._\n";
+    }
+
+    text += "\n_Grup yang di-blacklist akan di-skip saat broadcast/autoBC._";
+
+    return ctx.editMessageText(text, {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("➕ Tambah Blacklist", "bc_bl_add")],
+        [Markup.button.callback("🗑 Hapus Blacklist", "bc_bl_remove_menu")],
+        [Markup.button.callback("◀️ Kembali", "bc_panel_back")],
+      ]),
+    });
+  });
+
+  // --- Tambah Blacklist ---
+  bot.action("bc_bl_add", (ctx) => {
+    const state = userStates.get(ctx.from.id) || {};
+    userStates.set(ctx.from.id, { ...state, step: "bc_bl_input_id" });
+
+    return ctx.editMessageText(
+      "➕ *Tambah Blacklist Grup*\n\n" +
+      "Masukkan ID grup yang ingin di-blacklist:\n\n" +
+      "_Contoh: -1001234567890_\n" +
+      "_Bisa juga tanpa minus: 1001234567890_\n\n" +
+      "💡 Tip: Forward pesan dari grup ke @userinfobot untuk mendapatkan ID grup.",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("❌ Batal", "bc_blacklist_menu")],
+        ]),
+      }
+    );
+  });
+
+  // --- Hapus Blacklist Menu ---
+  bot.action("bc_bl_remove_menu", (ctx) => {
+    const blacklist = db.getBlacklist();
+
+    if (blacklist.length === 0) {
+      return ctx.answerCbQuery("Blacklist kosong!", { show_alert: true });
+    }
+
+    const buttons = blacklist.slice(0, 20).map((g) => {
+      const label = g.label ? `${g.label}` : g.id;
+      return [Markup.button.callback(`🗑 ${label}`, `bc_bl_remove_${g.id}`)];
+    });
+    buttons.push([Markup.button.callback("◀️ Kembali", "bc_blacklist_menu")]);
+
+    return ctx.editMessageText("🗑 *Hapus dari Blacklist*\n\nPilih grup yang ingin dihapus:", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard(buttons),
+    });
+  });
+
+  // --- Eksekusi Hapus Blacklist ---
+  bot.action(/^bc_bl_remove_(.+)$/, (ctx) => {
+    const groupId = ctx.match[1];
+    const removed = db.removeFromBlacklist(groupId);
+
+    if (removed) {
+      ctx.answerCbQuery("✅ Grup dihapus dari blacklist!", { show_alert: false });
+    } else {
+      ctx.answerCbQuery("❌ Gagal menghapus.", { show_alert: true });
+    }
+
+    // Re-render menu blacklist
+    const blacklist = db.getBlacklist();
+    if (blacklist.length === 0) {
+      return ctx.editMessageText("🚫 *Blacklist Grup*\n\nBlacklist kosong.", {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("➕ Tambah Blacklist", "bc_bl_add")],
+          [Markup.button.callback("◀️ Kembali", "bc_panel_back")],
+        ]),
+      });
+    }
+
+    const buttons = blacklist.slice(0, 20).map((g) => {
+      const label = g.label ? `${g.label}` : g.id;
+      return [Markup.button.callback(`🗑 ${label}`, `bc_bl_remove_${g.id}`)];
+    });
+    buttons.push([Markup.button.callback("◀️ Kembali", "bc_blacklist_menu")]);
+
+    return ctx.editMessageText("🗑 *Hapus dari Blacklist*\n\nPilih grup yang ingin dihapus:", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard(buttons),
+    });
+  });
+
   // ==================== TEXT HANDLERS ====================
   function handleBroadcastText(ctx, userId, state, text) {
+    // Blacklist input
+    if (state.step === "bc_bl_input_id") {
+      const groupId = text.trim().replace(/\s/g, "");
+      if (!groupId || groupId.length < 5) {
+        return ctx.reply("❌ ID grup tidak valid. Masukkan ID yang benar:\n_Contoh: -1001234567890_", { parse_mode: "Markdown" });
+      }
+
+      const result = db.addToBlacklist(groupId);
+      if (result.success) {
+        userStates.set(userId, { ...state, step: "bc_panel" });
+        return ctx.reply(
+          `✅ Grup \`${groupId}\` berhasil ditambahkan ke blacklist!\n\n_Grup ini akan di-skip saat broadcast._`,
+          {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback("➕ Tambah Lagi", "bc_bl_add")],
+              [Markup.button.callback("◀️ Kembali", "bc_blacklist_menu")],
+            ]),
+          }
+        );
+      } else {
+        return ctx.reply(`❌ ${result.error}`, {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("◀️ Kembali", "bc_blacklist_menu")],
+          ]),
+        });
+      }
+    }
+
     if (state.step === "bc_input_loop_delay") {
       const min = parseFloat(text);
       if (isNaN(min) || min < 1 || min > 1440) {

@@ -823,14 +823,15 @@ async function broadcastMessage(phone, bcMessage, grupDelay = 500) {
  * @param {string} phone - Nomor telepon
  * @param {object} forwardInfo - { fromPeer, msgIds, text }
  * @param {number} grupDelay - Jeda antar grup (ms)
- * @returns {object} - { success, sent, failed, total, error }
+ * @param {Array<string>} blacklistIds - ID grup yang di-blacklist (akan di-skip)
+ * @returns {object} - { success, sent, failed, skipped, total, error }
  */
-async function forwardBroadcast(phone, forwardInfo, grupDelay = 500) {
+async function forwardBroadcast(phone, forwardInfo, grupDelay = 500, blacklistIds = []) {
   const sessionString = loadSession(phone);
-  if (!sessionString) return { success: false, sent: 0, failed: 0, total: 0, error: "Session not found" };
+  if (!sessionString) return { success: false, sent: 0, failed: 0, skipped: 0, total: 0, error: "Session not found" };
 
   if (!forwardInfo) {
-    return { success: false, sent: 0, failed: 0, total: 0, error: "Forward info tidak lengkap" };
+    return { success: false, sent: 0, failed: 0, skipped: 0, total: 0, error: "Forward info tidak lengkap" };
   }
 
   // Jika tidak ada fromPeer/msgIds yang valid, langsung pakai sendMessage
@@ -838,7 +839,7 @@ async function forwardBroadcast(phone, forwardInfo, grupDelay = 500) {
   const text = forwardInfo.text || "";
 
   if (!canForward && !text) {
-    return { success: false, sent: 0, failed: 0, total: 0, error: "Tidak ada pesan untuk dikirim" };
+    return { success: false, sent: 0, failed: 0, skipped: 0, total: 0, error: "Tidak ada pesan untuk dikirim" };
   }
 
   let client;
@@ -860,11 +861,22 @@ async function forwardBroadcast(phone, forwardInfo, grupDelay = 500) {
       }
     }
 
-    let sent = 0, failed = 0;
+    let sent = 0, failed = 0, skipped = 0;
     let useForward = canForward;
     let forwardFailed = false;
 
+    // Normalize blacklist IDs to string for comparison
+    const blSet = new Set(blacklistIds.map((id) => id.toString()));
+
     for (let i = 0; i < groups.length; i++) {
+      // Cek blacklist - skip jika grup ada di blacklist
+      const groupId = groups[i].entity.id ? groups[i].entity.id.toString() : "";
+      const groupIdNeg = groups[i].id ? groups[i].id.toString() : "";
+      if (blSet.has(groupId) || blSet.has(groupIdNeg) || blSet.has(`-${groupId}`) || blSet.has(`-100${groupId}`)) {
+        skipped++;
+        continue;
+      }
+
       try {
         if (useForward && !forwardFailed) {
           // Coba forward
@@ -903,10 +915,10 @@ async function forwardBroadcast(phone, forwardInfo, grupDelay = 500) {
     }
 
     await client.disconnect();
-    return { success: true, sent, failed, total: groups.length };
+    return { success: true, sent, failed, skipped, total: groups.length };
   } catch (err) {
     try { if (client) await client.disconnect(); } catch (e) {}
-    return { success: false, sent: 0, failed: 0, total: 0, error: err.errorMessage || err.message };
+    return { success: false, sent: 0, failed: 0, skipped: 0, total: 0, error: err.errorMessage || err.message };
   }
 }
 

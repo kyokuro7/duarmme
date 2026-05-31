@@ -396,6 +396,39 @@ function setTOS(text) {
   writeJSON(TOS_FILE, { text });
 }
 
+// ==================== BLACKLIST GRUP ====================
+
+const BLACKLIST_FILE = path.join(DB_DIR, "blacklist_groups.json");
+
+function getBlacklist() {
+  return readJSON(BLACKLIST_FILE, []);
+}
+
+function addToBlacklist(groupId, label = "") {
+  const list = getBlacklist();
+  const id = groupId.toString();
+  if (list.find((g) => g.id === id)) {
+    return { success: false, error: "Grup sudah ada di blacklist" };
+  }
+  list.push({ id, label, addedAt: new Date().toISOString() });
+  writeJSON(BLACKLIST_FILE, list);
+  return { success: true };
+}
+
+function removeFromBlacklist(groupId) {
+  let list = getBlacklist();
+  const id = groupId.toString();
+  const before = list.length;
+  list = list.filter((g) => g.id !== id);
+  writeJSON(BLACKLIST_FILE, list);
+  return list.length < before;
+}
+
+function isBlacklisted(groupId) {
+  const list = getBlacklist();
+  return list.some((g) => g.id === groupId.toString());
+}
+
 module.exports = {
   // Harga
   getPrices,
@@ -440,4 +473,10 @@ module.exports = {
   // TOS
   getTOS,
   setTOS,
+
+  // Blacklist Grup
+  getBlacklist,
+  addToBlacklist,
+  removeFromBlacklist,
+  isBlacklisted,
 };
